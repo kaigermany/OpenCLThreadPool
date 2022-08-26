@@ -11,7 +11,7 @@
 .mtj.tmp/
 
 # Package Files #
-*.jar
+#*.jar  //needed to include the used libs. Used just to represent a full stand-alone system.
 *.war
 *.nar
 *.ear

@@ -4,6 +4,8 @@ import java.nio.IntBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 
+import me.kaigermany.openclthreadpool.core.MemoryModel.MinimalFS.File;
+
 public class MemoryModel {
 	public static Clustor getClustor(IntBuffer memory, IntBuffer configBuffer, int index) {
 		int clustorSize = configBuffer.get(1);
@@ -200,12 +202,70 @@ public class MemoryModel {
 	
 	
 	
-	
+	public static void MinimalFS_reimplementation_unittest(){
+		final int frameSize = 16;
+		final int rows = 16;
+		final int frameSize2 = 8;
+		final int rows2 = 10;
+		IntBuffer ib = IntBuffer.allocate(frameSize*rows);
+		printBuffer(ib);
+		MemoryModel.MinimalFS fs = new MemoryModel.MinimalFS(new MemoryModel.MinimalFS.VirtualIntBuffer() {
+			@Override
+			public boolean put(int pos, int val) {
+				try{
+					ib.put(pos, val);
+					return true;
+				}catch(Exception e){
+					return false;
+				}
+			}
+			@Override
+			public int get(int pos) {
+				return ib.get(pos);
+			}
+		}, frameSize, frameSize*rows);
+		printBuffer(ib);
+		int demoThreadName = 12345;
+		MinimalFS.File f = fs.newFile(demoThreadName, fs.ROOT_DIR_POS);
+		printBuffer(ib);
+		fs = new MemoryModel.MinimalFS(f.getMemoryInterface(), frameSize2, frameSize2*rows2);
+		printBuffer(ib);
+		
+		me.kaigermany.openclthreadpool.gpucontrol.MinimalFS.VirtualIntBuffer vib = new me.kaigermany.openclthreadpool.gpucontrol.MinimalFS.VirtualIntBuffer() {
+			@Override
+			public boolean put(int pos, int val) {
+				try{
+					ib.put(pos, val);
+					return true;
+				}catch(Exception e){
+					return false;
+				}
+			}
+			@Override
+			public int get(int pos) {
+				return ib.get(pos);
+			}
+		};
+		int root_dir_ptr = 1;
+		for(int i=0; i<3; i++){
+			int filePtr = me.kaigermany.openclthreadpool.gpucontrol.MinimalFS.newFile(vib, demoThreadName, 6789, root_dir_ptr);
+			printBuffer(ib);
+			System.out.println("filePtr="+filePtr);
+			if(filePtr != -1) break;
+			if(!fs.expandFile(f)){
+				System.out.println("ERROR while alloc new file chunk");
+			}
+		}
+	}
 	
 	
 	
 	
 	public static void MinimalFS_unittest(){
+		if(true){
+			MinimalFS_reimplementation_unittest();
+			return;
+		}
 		final int frameSize = 8;
 		final int rows = 10;
 		IntBuffer ib = IntBuffer.allocate(frameSize*rows);
@@ -236,7 +296,7 @@ public class MemoryModel {
 [0, 0, 0, 0, 0, 0, 0, 0]
 [0, 0, 0, 0, 0, 0, 0, 0]
 		 */
-		MinimalFS.File f = fs.newFile(12345, fs.mft_offset);
+		MinimalFS.File f = fs.newFile(12345, fs.ROOT_DIR_POS);
 		printBuffer(ib);
 		/*
 [8, 1, 0, 0, 0, 0, 0, 0]
@@ -279,10 +339,11 @@ public class MemoryModel {
 	}
 	
 	public static void printBuffer(IntBuffer ib){
-		ArrayList<Integer> list = new ArrayList<Integer>(8);
+		final int w = 8;
+		ArrayList<Integer> list = new ArrayList<Integer>(w);
 		for(int i=0; i<ib.capacity(); i++) {
 			list.add(ib.get(i));
-			if(i % 8 == 7) {
+			if(i % w == w-1) {
 				System.out.println(list);
 				list.clear();
 			}
@@ -301,22 +362,22 @@ public class MemoryModel {
 	
 	
 	public static class MinimalFS{
+		private final int ROOT_DIR_POS = 1;
+		private final int BITMAP_POS = 2;
+		private final int BITMAP_NAME = 1;
 		private VirtualIntBuffer memory;
 		private int clustorSize;
 		//private int bitmap_offset;
-		public int mft_offset;
 		
 		public MinimalFS(VirtualIntBuffer memory, int clustorSize, int usableSpace){
 			this.memory = memory;
 			this.clustorSize = clustorSize;
 			int clustorCount = usableSpace / clustorSize;
 			memory.put(0, clustorSize);
-			memory.put(1, mft_offset=1);
-			final int BITMAP_POS = 2;
-			final int BITMAP_NAME = 1;
-			makeGenericEntry(mft_offset, 2, true);//mft-root
+			memory.put(1, ROOT_DIR_POS);
+			makeGenericEntry(ROOT_DIR_POS, 2, true);//mft-root
 			makeGenericEntry(BITMAP_POS, 1, true);//bitmap-entry
-			new Directory(1).add(BITMAP_NAME, BITMAP_POS);//interface mft-root(location=1), add bitmap-entry(will be located at pos 2)
+			new Directory(ROOT_DIR_POS).add(BITMAP_NAME, BITMAP_POS);//interface mft-root(location=1), add bitmap-entry(will be located at pos 2)
 			//write bitmap-file
 			//VirtualIntBuffer ib = new File(BITMAP_POS).getMemoryInterface();
 			BitmapHandler b = new BitmapHandler(BITMAP_POS);
@@ -328,11 +389,11 @@ public class MemoryModel {
 			b.setSize(clustorCount);
 			b.initialize();
 		}
-		
+
 		public MinimalFS(VirtualIntBuffer memory){
 			this.memory = memory;
 			clustorSize = memory.get(0);
-			mft_offset = memory.get(1);
+			//ROOT_DIR_POS = memory.get(1);
 		}
 		
 		public File newFile(int uuid, int targetDirToStore){
@@ -344,6 +405,18 @@ public class MemoryModel {
 			File f = new File(fileLocation);
 			new Directory(targetDirToStore).add(uuid, fileLocation);
 			return f;
+		}
+		
+		public boolean expandFile(File f) {//append a new clamed clustor to the file allocation table
+			Entry currentEntry = f;
+			Entry lastEntry = f;
+			while((currentEntry = (lastEntry = currentEntry).getNextExtension()) != null);
+			Clustor c = allocateNewClustor();
+			if(c == null) return false;
+			currentEntry = c.getAsEntry();
+			currentEntry.setObjectType(3);
+			lastEntry.setNextExtension(currentEntry);
+			return true;
 		}
 		
 		public static VirtualIntBuffer makeSimpeBufferInterface(final IntBuffer ib){
@@ -379,7 +452,7 @@ public class MemoryModel {
 		}
 		
 		public int allocateNewClustorRAW(){
-			int pos = new BitmapHandler(new Directory(1).get(1)).allocateNewClustor();
+			int pos = new BitmapHandler(new Directory(ROOT_DIR_POS).get(BITMAP_NAME)).allocateNewClustor();
 			return pos;
 		}
 		
@@ -396,11 +469,11 @@ public class MemoryModel {
 		}
 		
 		public void deallocateNewClustor(int clustorId){
-			new BitmapHandler(new Directory(mft_offset).get(1)).setFree(clustorId);
+			new BitmapHandler(new Directory(ROOT_DIR_POS).get(BITMAP_NAME)).setFree(clustorId);
 		}
 		
 		public void overrideBitmapSize(int newLen){
-			new BitmapHandler(new Directory(mft_offset).get(1)).setSize(newLen);
+			new BitmapHandler(new Directory(ROOT_DIR_POS).get(BITMAP_NAME)).setSize(newLen);
 		}
 		
 		public class Clustor{

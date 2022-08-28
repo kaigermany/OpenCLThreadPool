@@ -1,6 +1,7 @@
 package me.kaigermany.openclthreadpool.gpucontrol;
 
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -15,6 +16,9 @@ import com.nativelibs4java.opencl.CLQueue;
 import com.nativelibs4java.opencl.JavaCL;
 import com.nativelibs4java.opencl.CLMem.Usage;
 import com.nativelibs4java.opencl.CLPlatform.DeviceFeature;
+
+import me.kaigermany.openclthreadpool.core.MemoryModel;
+import me.kaigermany.openclthreadpool.core.MemoryModel.MinimalFS;
 
 public class GPURuntimeInterface {
 	private static CLContext context;
@@ -33,17 +37,13 @@ public class GPURuntimeInterface {
 			context = JavaCL.createBestContext(DeviceFeature.DoubleSupport, DeviceFeature.GPU);
 			queue = context.createDefaultOutOfOrderQueueIfPossible();
 			context = queue.getContext();
-			String source;
-			{
-				InputStream is = GPURuntimeInterface.class.getClassLoader().getResourceAsStream("me/kaigermany/openclthreadpool/gpucontrol/NativeJavaRuntime.cl");
-				ByteArrayOutputStream baos = new ByteArrayOutputStream(1 << 16);
-				byte[] arr = new byte[1 << 16];
-				int l;
-				while((l = is.read(arr)) != -1) baos.write(arr, 0, l);
-				is.close();
-				source = new String(baos.toByteArray());
-			}
-			CLProgram program = context.createProgram(source);
+			String sourcecode_main = loadFile("me/kaigermany/openclthreadpool/gpucontrol/NativeJavaRuntime.cl");
+			String sourcecode_memory = loadFile("me/kaigermany/openclthreadpool/gpucontrol/NativeMemory.cl")
+					.replace("ROOT_DIR_POS", "1")//'abstract' way to set my constant declarations
+					.replace("BITMAP_POS", "2")
+					.replace("BITMAP_NAME", "1");
+					
+			CLProgram program = context.createProgram(sourcecode_memory + sourcecode_main);
 			kernel = program.createKernel("JavaEmulatorMain");
 			realloc(1 << 16);
 			updateConfig();
@@ -51,6 +51,39 @@ public class GPURuntimeInterface {
 		}catch(Exception e){
 			e.printStackTrace();
 		}
+	}
+	
+	public static void BufferTest(){
+		
+		BufferInterface bi = new BufferInterface(context, queue, 32);
+		int val = bi.getLocalBufferInterface().get(3);
+		System.out.println("read: " + val);
+		bi.getLocalBufferInterface().put(3, 12345);
+		val = bi.getLocalBufferInterface().get(3);
+		System.out.println("read#2: " + val);
+		/*
+		final int frameSize = 16;
+		final int rows = 16;
+		final int frameSize2 = 8;
+		final int rows2 = 10;
+		BufferInterface bi = new BufferInterface(context, queue, 16*20);
+		MemoryModel.MinimalFS fs = new MemoryModel.MinimalFS(new MemoryModel.MinimalFS.VirtualIntBuffer() {
+			@Override
+			public boolean put(int pos, int val) {
+				return bi.getLocalBufferInterface().put(pos, val);
+			}
+			@Override
+			public int get(int pos) {
+				return bi.getLocalBufferInterface().get(pos);
+			}
+		}, frameSize, frameSize*rows);
+		//printBuffer(ib);
+		int demoThreadName = 12345;
+		MinimalFS.File f = fs.newFile(demoThreadName, fs.ROOT_DIR_POS);
+		//printBuffer(ib);
+		fs = new MemoryModel.MinimalFS(f.getMemoryInterface(), frameSize2, frameSize2*rows2);
+		execute();
+		*/
 	}
 	
 	public static void setIterationCount(int val){
@@ -106,5 +139,18 @@ public class GPURuntimeInterface {
 	private static void insertNewThreads() {
 		// TODO Auto-generated method stub
 		
+	}
+	
+	
+	
+	
+	private static String loadFile(String path) throws IOException {
+		InputStream is = GPURuntimeInterface.class.getClassLoader().getResourceAsStream(path);
+		ByteArrayOutputStream baos = new ByteArrayOutputStream(1 << 16);
+		byte[] arr = new byte[1 << 16];
+		int l;
+		while((l = is.read(arr)) != -1) baos.write(arr, 0, l);
+		is.close();
+		return new String(baos.toByteArray());
 	}
 }

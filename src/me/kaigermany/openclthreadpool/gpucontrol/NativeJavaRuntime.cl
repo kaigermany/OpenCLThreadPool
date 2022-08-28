@@ -1,6 +1,8 @@
 
-//todo: double-config!
-
+//todo: double-config:
+// Enable double-precision floating point numbers support.
+// Not all platforms / devices support this, so you may have to switch to floats.
+#pragma OPENCL EXTENSION cl_khr_fp64 : enable
 
 
 __kernel void JavaEmulatorMain(__global int* memory, __global int* config){

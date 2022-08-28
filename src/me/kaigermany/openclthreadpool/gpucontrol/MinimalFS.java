@@ -88,11 +88,6 @@ public class MinimalFS {
 	public static boolean writeToParentFS(VirtualIntBuffer memory, int threadName, int pos, int val){
 		int parentRootDirPos = memory.get(1);
 		int fileEntryPointer = findDirEntry_ParentFS(memory, parentRootDirPos, threadName);
-		if(pos == 32){
-			System.err.println("writeToParentFS("+pos+", "+val+")");
-			Thread.dumpStack();
-		}
-		
 		return RunLengthInterface_put_ParentFS(memory, fileEntryPointer, pos, val);
 	}
 
@@ -399,6 +394,34 @@ public class MinimalFS {
 		if(!BitmapHandler_setSize(memory, threadName, BITMAP_POS, clusterCount)) return false;
 		return BitmapHandler_initialize(memory, threadName, BITMAP_POS);
 		//return true;
+	}
+	
+	public static void removeFile(VirtualIntBuffer memory, int threadName, int File_location){
+		int bitmapPos = Directory_get(memory, threadName, ROOT_DIR_POS, BITMAP_NAME);
+		int len = RunLength_getSize(memory, threadName, File_location);
+		//println("RunLengthController:get -> len="+len);
+		for(int i=1; i<len*2; i+=2){
+			int currRealOffset = Entry_Extensionbased_get(memory, threadName, File_location, i);
+			int currRunLength = Entry_Extensionbased_get(memory, threadName, File_location, i + 1);
+			for(int pos=0; pos<currRunLength; pos++) BitmapHandler_setFree(memory, threadName, bitmapPos, pos+currRealOffset);
+		}
+	}
+	
+	public static void removeDir(VirtualIntBuffer memory, int threadName, int dir_location){
+		int p = 0;
+		int ptr;
+		while((ptr = Entry_Extensionbased_get(memory, threadName, dir_location, p)) != 0){
+			p+=2;
+			removeEntry(memory, threadName, ptr);
+		}
+	}
+	
+	public static void removeEntry(VirtualIntBuffer memory, int threadName, int entry_location){
+		if(Entry_getObjectType(memory, threadName, entry_location) == 2){
+			removeDir(memory, threadName, entry_location);
+		} else {
+			removeFile(memory, threadName, entry_location);
+		}
 	}
 	/*
 	private final int ROOT_DIR_POS = 1;

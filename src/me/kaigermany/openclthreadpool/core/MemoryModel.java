@@ -362,7 +362,7 @@ public class MemoryModel {
 	
 	
 	public static class MinimalFS{
-		private final int ROOT_DIR_POS = 1;
+		public final int ROOT_DIR_POS = 1;
 		private final int BITMAP_POS = 2;
 		private final int BITMAP_NAME = 1;
 		private VirtualIntBuffer memory;

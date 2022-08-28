@@ -20,7 +20,8 @@ import java.util.concurrent.TimeUnit;
 public class Main {
 	public static void main(String... args){
 		System.out.println("<begin of test>");
-		basicTest();
+		//basicTest();
+		GPURuntimeInterface.BufferTest();
 		System.out.println("<end of test>");
 	}
 	

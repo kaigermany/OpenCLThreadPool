@@ -18,3 +18,20 @@ __kernel void JavaEmulatorMain(__global int* memory, __global int* config){
 	//memory[2] = memory[0];
 	memory[7] = filePos;
 }
+
+/*
+planed disk layout:
+system fs:
+root:[bitmap<FILE>, threads<DIR>, codeBook<DIR>, sharedData<DIR>]
+	threads:[thread0, thread1, thread2, ...]
+		thread:[properties<FILE>, stack<DIR>]
+		
+	codeBook:[class0, class1, class2, ...]
+		class:[field0, field1, field2, ...]
+			field<FILE>:[args-count, exception-table-length, exception-table<int>[], code-length, code<int>[]]
+				exception-table
+				
+	sharedData:[class0, class1, class2, ...]
+		class:[field0, field1, field2, ...]
+*/
+

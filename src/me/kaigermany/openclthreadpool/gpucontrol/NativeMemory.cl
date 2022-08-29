@@ -1,3 +1,5 @@
+// my biggest nightmare just became true -> https://stackoverflow.com/questions/21329060/opencl-and-indirect-recursion
+
 
 int BitmapHandler_getNextEmptyBitPos(int bitMask){
 	for(int i=0; i<32; i++) if((bitMask & (1 << i)) == 0) return i;
@@ -153,6 +155,8 @@ int RunLength_get(__global int* memory, int threadName, int File_location, int v
 	return -1;
 }
 
+bool BitmapHandler_setUse(__global int* memory, int threadName, int File_location, int pos);
+int Directory_get(__global int* memory, int threadName, int Directory_location, int entryNameId);
 
 int File_Storage_get(__global int* memory, int threadName, int File_location, int pos) {
 	int clusterSize = readFromParentFS(memory, threadName, 0);
@@ -165,10 +169,9 @@ int BitmapHandler_getSize(__global int* memory, int threadName, int File_locatio
 	return File_Storage_get(memory, threadName, File_location, 0);
 }
 
-bool BitmapHandler_setUse(__global int* memory, int threadName, int File_location, int pos);
-int Directory_get(__global int* memory, int threadName, int Directory_location, int entryNameId);
-
 int BitmapHandler_allocateNewCluster(__global int* memory, int threadName, int File_location) {
+	//int debugCounter = 16*15;
+
 	int offset = 1;
 	int lastMask;
 	while((lastMask = File_Storage_get(memory, threadName, File_location, offset)) == -1) offset++;
@@ -176,11 +179,66 @@ int BitmapHandler_allocateNewCluster(__global int* memory, int threadName, int F
 	if(p == -1) return -1;
 	offset = ((offset-1) * 32) + p;
 	if(offset >= BitmapHandler_getSize(memory, threadName, File_location)) return -1;
-	if(!wipeCluster(memory, threadName, offset)) return -1;//if this operation fail, it will not store this attempt to claim the cluster!
-	if(!BitmapHandler_setUse(memory, threadName, File_location, offset)) return -1;
+	//memory[3] = 123456;
+	if(!wipeCluster(memory, threadName, offset)) {
+	memory[3] = 567;
+		return -1;
+	} //if this operation fail, it will not store this attempt to claim the cluster!
+	//return 456;
+	memory[4] = 1234567;
+	//if(!BitmapHandler_setUse(memory, threadName, File_location, offset)) return -1;
 	return offset;
 }
 
+bool File_Storage_put_noNewClusterClaim(__global int* memory, int threadName, int File_location, int pos, int val) {
+	int clusterSize = readFromParentFS(memory, threadName, 0);
+	int cluster;
+	while(true){
+		cluster = RunLength_get(memory, threadName, File_location, pos / clusterSize);
+		if(cluster != -1) return false;
+	}
+	return writeToParentFS(memory, threadName, cluster*clusterSize + (pos % clusterSize), val);
+}
+/*
+bool BitmapHandler_initialize(__global int* memory, int threadName, int File_location){
+	return File_Storage_put(memory, threadName, File_location, 1, 15);//mark the first 4 clusters as used.
+}
+*/
+bool BitmapHandler_setSize(__global int* memory, int threadName, int File_location, int s){
+	return File_Storage_put_noNewClusterClaim(memory, threadName, File_location, 0, s);
+}
+
+bool BitmapHandler_setUse(__global int* memory, int threadName, int File_location, int pos){
+	memory[5] = 1234;
+	if(pos >= File_Storage_get(memory, threadName, File_location, 0)){
+		return true;
+	}
+	int wp = (pos / 32) + 1;
+	return File_Storage_put_noNewClusterClaim(memory, threadName, File_location, wp, File_Storage_get(memory, threadName, File_location, wp) | (1 << (pos % 32)));
+}
+
+bool BitmapHandler_setFree(__global int* memory, int threadName, int File_location, int pos){
+	if(pos >= File_Storage_get(memory, threadName, File_location, 0)){
+		return true;
+	}
+	return File_Storage_put_noNewClusterClaim(memory, threadName, File_location, pos / 32, File_Storage_get(memory, threadName, File_location, pos / 32) & ~(1 << (pos % 32)));
+}
+
+bool deallocateNewCluster(__global int* memory, int threadName, int clusterId){
+	return BitmapHandler_setFree(memory, threadName, Directory_get(memory, threadName, ROOT_DIR_POS, BITMAP_NAME), clusterId);
+}
+
+bool overrideBitmapSize(__global int* memory, int threadName, int newLen){
+	return BitmapHandler_setSize(memory, threadName, Directory_get(memory, threadName, ROOT_DIR_POS, BITMAP_NAME), newLen);
+}
+
+int Directory_getSize(__global int* memory, int threadName, int Directory_location){
+	int p = 0;
+	while(Entry_Extensionbased_get(memory, threadName, Directory_location, p) != 0){
+		p+=2;
+	}
+	return p / 2;
+}
 
 int allocateNewCluster(__global int* memory, int threadName){
 	return BitmapHandler_allocateNewCluster(memory, threadName, Directory_get(memory, threadName, ROOT_DIR_POS, BITMAP_NAME));
@@ -232,7 +290,13 @@ bool File_Storage_put(__global int* memory, int threadName, int File_location, i
 		//println("cluster="+cluster);
 		if(cluster != -1) break;
 		//println("RunLengthController:getMemoryInterface$put.allocateNewCluster::begin");
+		
+		
+		
+		
 		int loc = allocateNewCluster(memory, threadName);
+		
+		
 		if(loc == -1) return false;
 		//println("RunLengthController:getMemoryInterface$put.allocateNewCluster -> " + loc);
 		//Thread.dumpStack();
@@ -244,44 +308,7 @@ bool File_Storage_put(__global int* memory, int threadName, int File_location, i
 	//return true;
 }
 
-bool BitmapHandler_initialize(__global int* memory, int threadName, int File_location){
-	return File_Storage_put(memory, threadName, File_location, 1, 15);//mark the first 4 clusters as used.
-}
 
-bool BitmapHandler_setSize(__global int* memory, int threadName, int File_location, int s){
-	return File_Storage_put(memory, threadName, File_location, 0, s);
-}
-
-bool BitmapHandler_setUse(__global int* memory, int threadName, int File_location, int pos){
-	if(pos >= File_Storage_get(memory, threadName, File_location, 0)){
-		return true;
-	}
-	int wp = (pos / 32) + 1;
-	return File_Storage_put(memory, threadName, File_location, wp, File_Storage_get(memory, threadName, File_location, wp) | (1 << (pos % 32)));
-}
-
-bool BitmapHandler_setFree(__global int* memory, int threadName, int File_location, int pos){
-	if(pos >= File_Storage_get(memory, threadName, File_location, 0)){
-		return true;
-	}
-	return File_Storage_put(memory, threadName, File_location, pos / 32, File_Storage_get(memory, threadName, File_location, pos / 32) & ~(1 << (pos % 32)));
-}
-
-bool deallocateNewCluster(__global int* memory, int threadName, int clusterId){
-	return BitmapHandler_setFree(memory, threadName, Directory_get(memory, threadName, ROOT_DIR_POS, BITMAP_NAME), clusterId);
-}
-
-bool overrideBitmapSize(__global int* memory, int threadName, int newLen){
-	return BitmapHandler_setSize(memory, threadName, Directory_get(memory, threadName, ROOT_DIR_POS, BITMAP_NAME), newLen);
-}
-
-int Directory_getSize(__global int* memory, int threadName, int Directory_location){
-	int p = 0;
-	while(Entry_Extensionbased_get(memory, threadName, Directory_location, p) != 0){
-		p+=2;
-	}
-	return p / 2;
-}
 
 bool Directory_add(__global int* memory, int threadName, int Directory_location, int entryNameId, int entryLocation){
 	int p = Directory_getSize(memory, threadName, Directory_location) * 2;
@@ -348,7 +375,7 @@ bool init_makeGenericEntry(__global int* memory, int threadName, int clusterSize
 	}
 	return true;
 }
-
+/*
 bool initSubFS(__global int* memory, int threadName, int clusterSize, int usableSpace){
 	int clusterCount = usableSpace / clusterSize;
 	//memory.put(0, clusterSize);
@@ -370,9 +397,9 @@ bool initSubFS(__global int* memory, int threadName, int clusterSize, int usable
 	return BitmapHandler_initialize(memory, threadName, BITMAP_POS);
 	//return true;
 }
+*/
 
-
-void removeEntry(__global int* memory, int threadName, int entry_location);
+//void removeEntry(__global int* memory, int threadName, int entry_location);
 
 void removeFile(__global int* memory, int threadName, int File_location){
 	int bitmapPos = Directory_get(memory, threadName, ROOT_DIR_POS, BITMAP_NAME);
@@ -385,6 +412,7 @@ void removeFile(__global int* memory, int threadName, int File_location){
 	}
 }
 
+/*
 void removeDir(__global int* memory, int threadName, int dir_location){
 	int p = 0;
 	int ptr;
@@ -412,12 +440,13 @@ void removeEntry(__global int* memory, int threadName, int entry_location){
 		currentEntry = nextEntry;
 	}
 }
-
+*/
 
 
 
 int newFile(__global int* memory, int threadName, int uuid, int targetDirToStore){
 	int cluster = allocateNewCluster(memory, threadName);
+	
 	if(cluster == -1) return -1;//out-of-memory-error
 	int fileentry = cluster;
 	if(!Entry_setObjectType(memory, threadName, fileentry, 1)) {//1=file, 2=dir

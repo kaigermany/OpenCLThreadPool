@@ -6,6 +6,7 @@ import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.IntBuffer;
+import java.util.ArrayList;
 
 import com.nativelibs4java.opencl.CLBuffer;
 import com.nativelibs4java.opencl.CLContext;
@@ -19,6 +20,9 @@ import com.nativelibs4java.opencl.CLPlatform.DeviceFeature;
 
 import me.kaigermany.openclthreadpool.core.MemoryModel;
 import me.kaigermany.openclthreadpool.core.MemoryModel.MinimalFS;
+import me.kaigermany.openclthreadpool.core.MemoryModel.MinimalFS.BitmapHandler;
+import me.kaigermany.openclthreadpool.core.MemoryModel.MinimalFS.Directory;
+import me.kaigermany.openclthreadpool.gpucontrol.MinimalFS.VirtualIntBuffer;
 
 public class GPURuntimeInterface {
 	private static CLContext context;
@@ -31,7 +35,7 @@ public class GPURuntimeInterface {
 	private static CLBuffer<?> clBuffer;
 	private static CLBuffer<?> maxIterationCount;
 	private static int currentThreadCount = 0;
-	
+	static BufferInterface clBuffer2;
 	static{
 		try{
 			context = JavaCL.createBestContext(DeviceFeature.DoubleSupport, DeviceFeature.GPU);
@@ -54,19 +58,20 @@ public class GPURuntimeInterface {
 	}
 	
 	public static void BufferTest(){
-		
+		/*
 		BufferInterface bi = new BufferInterface(context, queue, 32);
 		int val = bi.getLocalBufferInterface().get(3);
 		System.out.println("read: " + val);
 		bi.getLocalBufferInterface().put(3, 12345);
 		val = bi.getLocalBufferInterface().get(3);
 		System.out.println("read#2: " + val);
-		/*
+		*/
 		final int frameSize = 16;
-		final int rows = 16;
+		final int rows = 20;
 		final int frameSize2 = 8;
 		final int rows2 = 10;
 		BufferInterface bi = new BufferInterface(context, queue, 16*20);
+		clBuffer2 = bi;
 		MemoryModel.MinimalFS fs = new MemoryModel.MinimalFS(new MemoryModel.MinimalFS.VirtualIntBuffer() {
 			@Override
 			public boolean put(int pos, int val) {
@@ -82,8 +87,34 @@ public class GPURuntimeInterface {
 		MinimalFS.File f = fs.newFile(demoThreadName, fs.ROOT_DIR_POS);
 		//printBuffer(ib);
 		fs = new MemoryModel.MinimalFS(f.getMemoryInterface(), frameSize2, frameSize2*rows2);
+		{
+			int preclaimSize = predictForBitmapSizeRequiredSpace(rows2, frameSize2);
+			MemoryModel.MinimalFS.File bm = fs.getBitmap();
+			for(int i=0; i<preclaimSize; i++) fs.expandFile(bm);
+		}
+		
+		currentThreadCount = 1;
 		execute();
-		*/
+		printBuffer(bi.getLocalBufferInterface(), 16*20);
+	}
+	public static void printBuffer(VirtualIntBuffer virtualIntBuffer, int len){
+		final int w = 8;
+		ArrayList<Integer> list = new ArrayList<Integer>(w);
+		for(int i=0; i<len; i++) {
+			list.add(virtualIntBuffer.get(i));
+			if(i % w == w-1) {
+				System.out.println(list);
+				list.clear();
+			}
+		}
+		System.out.println();
+	}
+	private static int predictForBitmapSizeRequiredSpace(int clusters, int clusterSize){
+		int fileSize = clusters / 32;
+		if(clusters % 32 != 0) fileSize++;
+		int clusterCount = fileSize / clusterSize;
+		if(fileSize % clusterSize != 0) clusterCount++;
+		return clusterCount;
 	}
 	
 	public static void setIterationCount(int val){
@@ -124,10 +155,10 @@ public class GPURuntimeInterface {
 	
 	public static void execute(){
 		insertNewThreads();
-		kernel.setArgs(clBuffer, maxIterationCount);
+		kernel.setArgs(/*clBuffer*/clBuffer2.getBuffer(), maxIterationCount);
 		CLEvent dftEvt = kernel.enqueueNDRange(queue, new int[] { currentThreadCount });
 		dftEvt.waitFor();
-		clBuffer.read(queue, dftEvt).getInts(memory);
+		//clBuffer.read(queue, dftEvt).getInts(memory);
 		fetchDoneThreads();
 	}
 

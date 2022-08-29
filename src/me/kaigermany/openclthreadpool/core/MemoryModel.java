@@ -364,7 +364,7 @@ public class MemoryModel {
 	public static class MinimalFS{
 		public final int ROOT_DIR_POS = 1;
 		private final int BITMAP_POS = 2;
-		private final int BITMAP_NAME = 1;
+		public final int BITMAP_NAME = 1;
 		private VirtualIntBuffer memory;
 		private int clustorSize;
 		//private int bitmap_offset;
@@ -474,6 +474,10 @@ public class MemoryModel {
 		
 		public void overrideBitmapSize(int newLen){
 			new BitmapHandler(new Directory(ROOT_DIR_POS).get(BITMAP_NAME)).setSize(newLen);
+		}
+		
+		public BitmapHandler getBitmap(){
+			return new BitmapHandler(new Directory(ROOT_DIR_POS).get(BITMAP_NAME));
 		}
 		
 		public class Clustor{
@@ -769,8 +773,13 @@ public class MemoryModel {
 
 			public void setSize(int s){
 				getMemoryInterface().put(0, s);
+				growReservedToFullSize(s);
 			}
 			
+			public void growReservedToFullSize(int size){
+				setUse(size-1);
+				setFree(size-1);
+			}
 			
 			public void setFree(int pos){
 				VirtualIntBuffer ib = getMemoryInterface();

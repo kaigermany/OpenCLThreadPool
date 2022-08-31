@@ -1,5 +1,6 @@
 package me.kaigermany.openclthreadpool.core;
 
+import java.lang.reflect.Field;
 import java.util.HashMap;
 
 public class ObjectMamagement {
@@ -13,7 +14,17 @@ public class ObjectMamagement {
 	}
 	
 	private static void writeObject(MemoryModel.MinimalFS fs, MemoryModel.MinimalFS.File targetFile, Object obj){
-		
+		if(obj == null){
+			
+		} else {
+			Class<?> c = obj.getClass();
+			do{
+			Field[] fields = c.getDeclaredFields();
+			c = obj.getClass().getSuperclass();
+			
+			
+			}while(c != Object.class);
+		}
 	}
 	
 	private static Object readObject(MemoryModel.MinimalFS fs, MemoryModel.MinimalFS.File targetFile){

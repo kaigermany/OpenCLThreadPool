@@ -3,6 +3,8 @@ package me.kaigermany.openclthreadpool.core;
 import java.nio.IntBuffer;
 import java.util.ArrayList;
 
+import me.kaigermany.openclthreadpool.core.MemoryModel.MinimalFS.Directory;
+
 public class MemoryModel {
 	public static Clustor getClustor(IntBuffer memory, IntBuffer configBuffer, int index) {
 		int clustorSize = configBuffer.get(1);
@@ -399,9 +401,19 @@ public class MemoryModel {
 			Entry e = c.getAsEntry();
 			e.setObjectType(1);//1=file, 2=dir
 			int fileLocation = e.location;
-			File f = new File(fileLocation);
 			new Directory(targetDirToStore).add(uuid, fileLocation);
-			return f;
+			return new File(fileLocation);
+		}
+
+		public Directory newDirectory(int uuid, int targetDirToStore) {
+			// TODO function double-check!
+			Clustor c = allocateNewClustor();
+			if(c == null) return null;//out-of-memory-error
+			Entry e = c.getAsEntry();
+			e.setObjectType(2);//1=file, 2=dir
+			int fileLocation = e.location;
+			new Directory(targetDirToStore).add(uuid, fileLocation);
+			return new Directory(fileLocation);
 		}
 		
 		public boolean expandFile(File f) {//append a new clamed clustor to the file allocation table
@@ -648,6 +660,12 @@ public class MemoryModel {
 				}
 				return p / 2;
 			}
+			public Directory getDirectory(int systemFsDirNameThreads) {
+				return new Directory(get(systemFsDirNameThreads));
+			}
+			public File getFile(int systemFsDirNameThreads) {
+				return new File(get(systemFsDirNameThreads));
+			}
 		}
 		
 		public class File extends Entry{
@@ -817,6 +835,10 @@ public class MemoryModel {
 				for(int i=0; i<32; i++) if((bitMask & (1 << i)) == 0) return i;
 				return -1;
 			}
+		}
+
+		public Directory getDirectory(int dir) {
+			return new Directory(dir);
 		}
 	}
 }

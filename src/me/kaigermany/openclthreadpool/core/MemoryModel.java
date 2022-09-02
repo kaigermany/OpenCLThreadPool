@@ -2,9 +2,6 @@ package me.kaigermany.openclthreadpool.core;
 
 import java.nio.IntBuffer;
 import java.util.ArrayList;
-import java.util.Arrays;
-
-import me.kaigermany.openclthreadpool.core.MemoryModel.MinimalFS.File;
 
 public class MemoryModel {
 	public static Clustor getClustor(IntBuffer memory, IntBuffer configBuffer, int index) {
